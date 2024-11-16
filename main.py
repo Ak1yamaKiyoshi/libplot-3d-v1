@@ -4,8 +4,8 @@ import numpy as np
 
 
 
-distance_to_camera = 0.01 # cm 
 width, height = 200, 300 # px  
+camera_distance = 10
 # rad
 roll, pitch, yaw = 1.15, 1.15, 0
 
@@ -13,88 +13,153 @@ roll, pitch, yaw = 1.15, 1.15, 0
 def lerp(v, from_min, from_max, to_min, to_max):
         return (v - from_min) / (from_max - from_min) * (to_max - to_min) + to_min
 
-points = [
-    # [0, 0, 0],
-    [1, 1, 1],
-    # [0, 1, 0],
-    [1, 0, 1],
-    [0, 1, 1],
+def grid_pattern(n, y, spacing=1):
+    points = []
     
-    [0, 0, 2],
-    [1, 1, 2],
-    [0, 1, 2],
-    [1, 0, 2],
-    [0, 1, 2],
+    for i in range(n):
+        for j in range(n):
+            points.append([i * spacing, y, j * spacing])
     
-    [0, 0, 4],
-    [1, 1, 4],
-    [0, 1, 4],
-    [1, 0, 4],
-    [0, 1, 4],
+    for i in range(n):
+        for j in range(n-1):
+            for k in range(1, 4):
+                t = k/4
+                x = i * spacing
+                z = (j + t) * spacing
+                points.append([x, y, z])
     
-    [0, 0, 7],
-    [1, 1, 7],
-    [0, 1, 7],
-    [1, 0, 7],
-    [0, 1, 7],
-]
+    for i in range(n-1):
+        for j in range(n):
+            for k in range(1, 4):
+                t = k/4
+                x = (i + t) * spacing
+                z = j * spacing
+                points.append([x, y, z])
+    
+    points = np.array(points)
+    center = (n * spacing) / 2
+    points[:, 0] -= center
+    points[:, 2] -= center
+    
+    return points
+
+
+
+def generate_sphere_points(radius=1, num_points=100):
+    num_phi = int(np.sqrt(num_points))  
+    num_theta = num_phi * 2
+    phi = np.linspace(0, np.pi, num_phi)
+    theta = np.linspace(0, 2*np.pi, num_theta)
+    phi, theta = np.meshgrid(phi, theta)
+    x = radius * np.sin(phi) * np.cos(theta)
+    y = radius * np.sin(phi) * np.sin(theta)
+    z = radius * np.cos(phi)
+
+    points = np.column_stack((x.flatten(), y.flatten(), z.flatten()))
+    return points
+
+points = np.array(list(generate_sphere_points(1, 1000)) + list(grid_pattern(20, 0)))
+
 
 def render_points(roll, pitch, yaw, points, distance):
     rollmat = np.array([
         [np.cos(roll), -np.sin(roll), 0],
         [np.sin(roll), np.cos(roll), 0],
-        [0, 0, distance],
+        [0, 0, 1],
     ])
 
     pitchmat = np.array([
         [np.cos(pitch), 0, np.sin(pitch)],
-        [0, distance, 0],
+        [0, 1, 0],
         [-np.sin(pitch), 0, np.cos(pitch)],
     ])
 
     yawmat = np.array([
-        [distance, 0, 0],
+        [1, 0, 0],
         [0, np.cos(yaw), -np.sin(yaw)],
         [0, np.sin(yaw), np.cos(yaw)],
     ])
     
     points = np.array(points)
 
+
+    z_axis = []
     projected_points = []
+    max_z = float('-inf')  # Initialize with negative infinity
+    min_z = float('inf')   # Initialize with positive infinity
+    max_x = float('-inf')
+    min_x = float('inf')
+    max_y = float('-inf')
+    min_y = float('inf')
+    center_x = 0
+    center_y = 0
+    center_z = 0
     for point in points: 
         point = np.array(point) 
-        point = point @ rollmat  @ pitchmat @ yawmat
+        rpoint = point @ yawmat @ pitchmat @ rollmat
+        z = rpoint[2] + distance 
+ 
+        if abs(z) < 1e-5:
+            z = 1e-5
+ 
+        max_z = max(max_z, z)
+        min_z = min(min_z, z)
+        z_axis.append(z)
+ 
+        x = (distance * rpoint[0]) / z
+        y = (distance * rpoint[1]) / z
+
+        center_x += rpoint[0]
+        center_y += rpoint[1]
+        center_z += rpoint[2]
+
+        max_x = max(max_x, x)
+        min_x = min(min_x, x)
+        max_y = max(max_y, y)
+        min_y = min(min_y, y)
+
+        projected_points.append([x, y])
         
-        ratio = distance / (point[2]+1e-5) 
-        proj = ratio * (point[:2])
-        projected_points.append(proj)
+    num_points = len(points)
+    center_x /= num_points
+    center_y /= num_points
+    center_z /= num_points
+    np.array(projected_points)        
 
     pixels = lerp(projected_points, np.array([0, 0]), np.array([10, 10]), np.array([0, 0]), np.array([height, width]))
     canvas = np.zeros((width, height,3 ), dtype=np.uint8)  
 
-    for pixel, point in zip(pixels, points):
-        distance = point[2]
-        color = int(distance / np.max(points[:, 2]) * 255)
-        cv.circle(canvas, tuple(pixel.astype(int)), 2, (color, 255, color), 2)
+    for pixel, point, point_z in zip(pixels, points, z_axis):
 
+        if point_z < 1e-5 and point_z > -1e-5:
+            point_z = 1e-5
+        color = int((1 - point_z/max_z) * 255)
+        
+        try:
+            cv.circle(canvas, tuple(pixel.astype(int)), 2, (color, color, color), 2)
+        except: pass
     return canvas
 
 
 def rollslider_callback(val):
     global roll
-    roll = np.radians(-val)
+    roll = np.radians(-val/10)
     print(f"roll+ rad: {roll}")
 
 
 def pitchslider_callback(val):
     global pitch
-    pitch = np.radians(-val)
+    pitch = np.radians(-val/10)
     print(f"pitch rad: {pitch}")
 
 def yawslider_callback(val):
     global yaw
-    yaw = np.radians(-val)
+    yaw = np.radians(-val/10)
     print(f"yaw rad: {yaw}")
+
+def cameradistance_callback(val):
+    global camera_distance
+    camera_distance = val
 
 
 
@@ -107,18 +172,23 @@ cv.setWindowProperty("plot", cv.WND_PROP_FULLSCREEN, cv.WINDOW_NORMAL)
 cv.setMouseCallback("plot", capture_movement)
 
 cv.createTrackbar(
-    "roll", "plot", 0, 180, rollslider_callback
+    "roll", "plot", 0, 10*180, rollslider_callback
 ) 
 cv.createTrackbar(
-    "pitch", "plot", 0, 180, pitchslider_callback
+    "pitch", "plot", 0, 10*180, pitchslider_callback
 ) 
 cv.createTrackbar(
-    "yaw", "plot", 0, 180, yawslider_callback
+    "yaw", "plot", 0, 10*180, yawslider_callback
 ) 
+cv.createTrackbar(
+    "camera", "plot", 0, 200, cameradistance_callback
+)
 
 while True: 
     
     
-    canvas = render_points(roll, pitch, yaw, points, 20.01)
+    canvas = render_points(roll, pitch, yaw, points, camera_distance)
     cv.imshow("plot", canvas)
     cv.waitKey(1)
+
+

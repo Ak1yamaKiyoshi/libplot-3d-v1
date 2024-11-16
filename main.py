@@ -6,6 +6,7 @@ import numpy as np
 
 width, height = 200, 300 # px  
 camera_distance = 10
+focal_lenght = 30 # mm 
 # rad
 roll, pitch, yaw = 1.15, 1.15, 0
 
@@ -43,8 +44,6 @@ def grid_pattern(n, y, spacing=1):
     
     return points
 
-
-
 def generate_sphere_points(radius=1, num_points=100):
     num_phi = int(np.sqrt(num_points))  
     num_theta = num_phi * 2
@@ -58,7 +57,7 @@ def generate_sphere_points(radius=1, num_points=100):
     points = np.column_stack((x.flatten(), y.flatten(), z.flatten()))
     return points
 
-points = np.array(list(generate_sphere_points(1, 1000)) + list(grid_pattern(20, 0)))
+points = np.array(list(grid_pattern(20, 0))+list(generate_sphere_points(1, 1000)))
 
 
 def render_points(roll, pitch, yaw, points, distance):
@@ -96,8 +95,10 @@ def render_points(roll, pitch, yaw, points, distance):
     center_z = 0
     for point in points: 
         point = np.array(point) 
-        rpoint = point @ yawmat @ pitchmat @ rollmat
-        z = rpoint[2] + distance 
+        # rpoint = point @ yawmat @ pitchmat @ rollmat
+        rpoint = point @ yawmat @ rollmat @ pitchmat
+        
+        z = rpoint[2]
  
         if abs(z) < 1e-5:
             z = 1e-5
@@ -105,9 +106,9 @@ def render_points(roll, pitch, yaw, points, distance):
         max_z = max(max_z, z)
         min_z = min(min_z, z)
         z_axis.append(z)
- 
-        x = (distance * rpoint[0]) / z
-        y = (distance * rpoint[1]) / z
+
+        x = (focal_lenght * (rpoint[0])) / (z - distance) 
+        y = (focal_lenght * (rpoint[1])) / (z - distance) 
 
         center_x += rpoint[0]
         center_y += rpoint[1]
@@ -126,7 +127,7 @@ def render_points(roll, pitch, yaw, points, distance):
     center_z /= num_points
     np.array(projected_points)        
 
-    pixels = lerp(projected_points, np.array([0, 0]), np.array([10, 10]), np.array([0, 0]), np.array([height, width]))
+    pixels = lerp(projected_points, np.array([-30, -30]), np.array([30, 30]), np.array([0, 0]), np.array([height, width]))
     canvas = np.zeros((width, height,3 ), dtype=np.uint8)  
 
     for pixel, point, point_z in zip(pixels, points, z_axis):
@@ -134,7 +135,6 @@ def render_points(roll, pitch, yaw, points, distance):
         if point_z < 1e-5 and point_z > -1e-5:
             point_z = 1e-5
         color = int((1 - point_z/max_z) * 255)
-        
         try:
             cv.circle(canvas, tuple(pixel.astype(int)), 2, (color, color, color), 2)
         except: pass
@@ -159,9 +159,11 @@ def yawslider_callback(val):
 
 def cameradistance_callback(val):
     global camera_distance
-    camera_distance = val
+    camera_distance = val/20
 
-
+def focallenght_callback(val):
+    global focal_lenght
+    focal_lenght = val/10
 
 def capture_movement(event, x, y, flags, param):
     global mouse_pos
@@ -182,6 +184,9 @@ cv.createTrackbar(
 ) 
 cv.createTrackbar(
     "camera", "plot", 0, 200, cameradistance_callback
+)
+cv.createTrackbar(
+    "focal_length", "plot", 0, 1500, focallenght_callback
 )
 
 while True: 

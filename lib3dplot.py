@@ -13,7 +13,7 @@ default_config = {
         "to_draw": True,
         "radius": 2,
         "color": (255, 255, 255), 
-        "thickness": 1,
+        "thickness": 2,
         "time_mapping": {
             "color_indicies": [1, 2],
             "use": True
@@ -89,7 +89,6 @@ def render(canvas: Optional, points: np.ndarray, rotation_rad, cfg):
         origin = axis_pixels[0]
         try:
             for axis_pixel, color in zip(axis_pixels[1:4], cfg['axis']['colors']):
-                print(axis_pixel)
                 cv.line(canvas, origin, axis_pixel, color, cfg['axis']['thickness'])
         except: pass
     
@@ -213,8 +212,12 @@ if __name__ == "__main__":
     )
 
     import time
+    time_start = time.time()
     while True:     
-        rotation_rad = roll, pitch, yaw
+        delta_time = time.time() - time_start
+        angle_roll = np.radians(delta_time*6)
+
+        rotation_rad = roll+angle_roll, pitch, yaw+angle_roll
         cfg['camera_distance'] = camera_distance
         cfg['focal_lenght_mm'] = focal_lenght
         tstart = time.time()
